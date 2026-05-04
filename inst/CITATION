@@ -1,0 +1,13 @@
+citHeader("To cite paneltests in publications use:")
+
+bibentry(
+  bibtype  = "Manual",
+  title    = "Panel Data Pre-Testing and Diagnostic Suite",
+  author   = person("Muhammad Abdullah", "Alkhalaf",
+               email = "muhammedalkhalaf@gmail.com",
+               role  = c("aut", "cre"),
+               comment = c(ORCID = "0009-0002-2677-9246")),
+  year     = "2026",
+  note     = "R package version 1.0.5",
+  url      = "https://CRAN.R-project.org/package=paneltests"
+)
