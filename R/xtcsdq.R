@@ -373,7 +373,7 @@ print.xtcsdq <- function(x, ...) {
   cat("\n")
   cat(strrep("-", 70), "\n")
   cat("  XTCSDQ: CSD Test in Panel Quantile Regressions\n")
-  cat("  Demetrescu, Hosseinkouchack & Rodrigues (2023)\n")
+  cat("  Demetrescu, Hosseinkouchack and Rodrigues (2023)\n")
   cat(strrep("-", 70), "\n")
   cat(sprintf("  N (units)  : %d\n", x$N))
   cat(sprintf("  T (periods): %d\n", x$TT))

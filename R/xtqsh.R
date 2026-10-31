@@ -390,7 +390,7 @@ xtqsh <- function(formula, data, index, tau,
   N <- n_panels_eff
 
   ## Minimum distance (pooled) estimator: weighted mean
-  ## V_i^{-1} = diag(1/se_i^2) — diagonal weight matrix
+  ## V_i^{-1} = diag(1/se_i^2) is a diagonal weight matrix
   beta_md  <- numeric(k)
   beta_md_se_v <- numeric(k)
   for (j in seq_len(k)) {
@@ -457,7 +457,7 @@ print.xtqsh <- function(x, ...) {
   cat("\n")
   cat(strrep("-", 70), "\n")
   cat("  Quantile Regression Slope Homogeneity Test\n")
-  cat("  Galvao, Juhl, Montes-Rojas & Olmo (2017)\n")
+  cat("  Galvao, Juhl, Montes-Rojas and Olmo (2017)\n")
   cat(strrep("-", 70), "\n")
   cat(sprintf("  Dep. variable : %s\n", x$depvar))
   cat(sprintf("  Covariates    : %s\n", paste(x$indepvars, collapse = ", ")))

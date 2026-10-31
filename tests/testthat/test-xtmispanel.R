@@ -64,6 +64,6 @@ test_that("xtmispanel sensitivity runs and returns best_method", {
 
 test_that(".xmp_locf fills forward correctly", {
   x   <- c(1, NA, NA, 4)
-  res <- xtmispanel:::.xmp_locf(x)
+  res <- paneltests:::.xmp_locf(x)
   expect_equal(res, c(1, 1, 1, 4))
 })
