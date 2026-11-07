@@ -98,6 +98,15 @@
 #' received the same bandwidth (as when the reported average is an integer
 #' such as 0.00).
 #'
+#' \strong{Input checks.} The function stops when a (panel, time) pair is
+#' duplicated, when a numeric or \code{Date} time index is not equally
+#' spaced within a panel, when the response is constant in a panel, when a
+#' regressor is constant or collinear with the others and the deterministic
+#' terms in a panel, when \code{kernel_lags} is not a non-negative integer
+#' smaller than the number of differenced observations per panel, and when
+#' \code{lags} leaves no more observations than coefficients in the
+#' panel-specific ADF regressions or makes one of them fit exactly.
+#'
 #' @references
 #' Pedroni, P. (1999). Critical values for cointegration tests in
 #' heterogeneous panels with multiple regressors. \emph{Oxford Bulletin of
@@ -135,7 +144,11 @@ xtpedroni <- function(data, formula, index, trend = FALSE, lags = 1L,
   if (N < 2L) warning("N = 1 panel: the standardization (chi - mu sqrt(N)) / sqrt(nu) is asymptotic in N and the p-values are not meaningful for a single panel")
   if (T0 < 10L) warning(sprintf("only %d periods per panel: the moments are large-T approximations and the standardized statistics are unreliable for short panels", T0))
   if (is.null(kernel_lags)) kernel_lags <- floor(4 * (TT / 100)^(2 / 9))
-  kernel_lags <- as.integer(kernel_lags)
+  kernel_lags <- .check_kernel_lags(kernel_lags, TT, "xtpedroni")
+  lags <- .check_lags(lags, "xtpedroni")
+  if (T0 - lags - 1L <= lags + 1L)
+    stop(sprintf("xtpedroni: lags = %d leaves %d observation(s) per panel for the %d coefficients of each ADF regression; use fewer lags",
+                 lags, T0 - lags - 1L, lags + 1L))
   bart <- function(u, m) { n <- length(u); s <- sum(u^2) / n
     if (m > 0) for (j in seq_len(m)) s <- s + 2 * (1 - j / (m + 1)) * sum(u[(j + 1):n] * u[1:(n - j)]) / n
     s }
@@ -147,7 +160,13 @@ xtpedroni <- function(data, formula, index, trend = FALSE, lags = 1L,
     dd <- data[data[[pid_col]] == ids[i], ]
     X <- as.matrix(dd[, x, drop = FALSE])
     Zdet <- if (trend) cbind(1, seq_len(T0)) else matrix(1, T0, 1)
-    e <- stats::lm.fit(cbind(Zdet, X), dd[[y]])$residuals
+    Zi <- cbind(Zdet, X); qz <- qr(Zi)
+    if (qz$rank < ncol(Zi))
+      stop(sprintf("xtpedroni: in panel %s, regressor(s) %s are constant or collinear with the others and the deterministic terms",
+                   format(ids[i]), paste(colnames(Zi)[qz$pivot[(qz$rank + 1):ncol(Zi)]], collapse = ", ")))
+    if (stats::var(dd[[y]]) <= 1e-12 * max(mean(dd[[y]]^2), .Machine$double.xmin))
+      stop(sprintf("xtpedroni: the response is constant in panel %s", format(ids[i])))
+    e <- stats::lm.fit(Zi, dd[[y]])$residuals
     E[[i]] <- e
     el <- e[-T0]; de <- diff(e)
     ## DF regression without constant; residuals are demeaned before the
@@ -174,7 +193,10 @@ xtpedroni <- function(data, formula, index, trend = FALSE, lags = 1L,
     el2 <- e[idx - 1]; de2 <- de[idx - 1]
     Za <- cbind(el2); for (j in seq_len(p)) Za <- cbind(Za, de[idx - 1 - j])
     ua <- stats::lm.fit(Za, de2)$residuals; ua <- ua - mean(ua)
-    sstar2[i] <- sum(ua^2) / length(ua); anum[i] <- sum(el2 * de2); aden[i] <- sum(el2^2) }
+    sstar2[i] <- sum(ua^2) / length(ua); anum[i] <- sum(el2 * de2); aden[i] <- sum(el2^2)
+    if (sstar2[i] <= 1e-12 * max(sum(de2^2), .Machine$double.xmin))
+      stop(sprintf("xtpedroni: the ADF regression of panel %s fits exactly (zero residual variance) with %d lag(s) on %d observations; use fewer lags or a longer panel",
+                   format(ids[i]), p, length(idx))) }
   num <- sapply(E, function(e) sum(e[-T0] * diff(e))) - TT * lam
   den <- sapply(E, function(e) sum(e[-T0]^2))
   w <- 1 / L11
@@ -285,7 +307,35 @@ print.xtpedroni <- function(x, ...) {
   out <- data.frame(data[[pid_col]], data[[tid_col]], as.numeric(yv), stringsAsFactors = FALSE)
   names(out) <- c(pid_col, tid_col, "y")
   for (j in seq_len(ncol(Xm))) out[[colnames(Xm)[j]]] <- as.numeric(Xm[, j])
-  out[order(out[[pid_col]], out[[tid_col]]), , drop = FALSE]
+  out <- out[order(out[[pid_col]], out[[tid_col]]), , drop = FALSE]
+  dup <- duplicated(out[, c(pid_col, tid_col)])
+  if (any(dup)) stop(sprintf("%s: %d duplicated (panel, time) pair(s) (first: panel %s, time %s); each period must appear once per panel",
+                             fname, sum(dup), format(out[[pid_col]][dup][1]), format(out[[tid_col]][dup][1])))
+  tv <- out[[tid_col]]
+  if (is.numeric(tv) || inherits(tv, "Date")) {
+    steps <- tapply(as.numeric(tv), out[[pid_col]], function(z) unique(round(diff(z), 8)))
+    bad <- names(steps)[vapply(steps, function(s) length(s) > 1L, logical(1))]
+    if (length(bad)) stop(sprintf("%s: the time index is not equally spaced in panel(s) %s; the tests need consecutive periods without gaps",
+                                  fname, paste(utils::head(bad, 5), collapse = ", ")))
+  }
+  out
+}
+
+.check_kernel_lags <- function(kernel_lags, n, fname) {
+  ## n: number of observations of the series the kernel is applied to
+  if (length(kernel_lags) != 1L || !is.numeric(kernel_lags) || !is.finite(kernel_lags) ||
+      kernel_lags < 0 || kernel_lags != round(kernel_lags))
+    stop(fname, ": 'kernel_lags' must be NULL or a single non-negative integer")
+  if (kernel_lags > n - 1L)
+    stop(sprintf("%s: kernel_lags = %d needs at least %d observations per panel; the series has %d",
+                 fname, as.integer(kernel_lags), as.integer(kernel_lags) + 1L, as.integer(n)))
+  as.integer(kernel_lags)
+}
+
+.check_lags <- function(lags, fname) {
+  if (length(lags) != 1L || !is.numeric(lags) || !is.finite(lags) || lags < 1 || lags != round(lags))
+    stop(fname, ": 'lags' must be a single positive integer")
+  as.integer(lags)
 }
 
 #' @keywords internal

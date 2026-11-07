@@ -73,9 +73,9 @@ test_that("p-values: right tail for the Pedroni variance ratio, left tail otherw
   expect_true(all(k$p[k$stats > 0] > 0.5)); expect_true(all(r$p[-1][r$stats[-1] > 0] > 0.5))
 })
 
-test_that("xtkao: ADF t uses s_v^2 = RSS / (N T) with T the number of DF periods (Kao 1999, p. 9-10)", {
+test_that("xtkao, convention = 'stata': ADF t uses s_v^2 = RSS / (N T) with T the number of DF periods", {
   d <- sim_panel(k = 1, TT = 20, seed = 4)
-  k <- xtkao(d, y ~ x1, index = c("id", "t"), lags = 1, kernel_lags = 0)
+  k <- xtkao(d, y ~ x1, index = c("id", "t"), lags = 1, kernel_lags = 0, convention = "stata")
   ## rebuild: AR(1) residual step drops t = 1; FE on t >= 2; pooled DF / ADF
   N <- 6; T0 <- 20
   dd <- d[d$t >= 2, ]
@@ -162,11 +162,101 @@ test_that("agreement with Stata xtcointtest on the chapter-6 panel (fixed bandwi
   p4 <- xtpedroni(d, AFSI ~ MaPP_cum + lnWUI + FED + lnOIL, index = c("iso", "year"), lags = 1, kernel_lags = 1)
   expect_equal(unname(p4$z[c("group_rho", "group_t", "group_adf")]), c(1.5534802, -3.8168484, -2.3863107), tolerance = 1e-6)
   ## Kao, set 1, lags(1) kernel(bartlett 2): four statistics at 1e-6
-  k <- xtkao(d, Z ~ LEV + LDR + RR + lnGPR, index = c("iso", "year"), lags = 1, kernel_lags = 2)
+  k <- xtkao(d, Z ~ LEV + LDR + RR + lnGPR, index = c("iso", "year"), lags = 1, kernel_lags = 2, convention = "stata")
   expect_lt(max(abs(unname(k$stats[c(1, 2, 4, 5)]) - c(0.06566431, -0.2500834, 0.17883823, -0.16659824))), 1e-6)
   ## ADF t follows Kao (1999) s_v^2 = RSS/(NT); Stata's ADF t (-1.1560 here)
   ## is a known gap: within 0.02 on this specification (absolute), up to
   ## 0.19 on the other reference specifications (see the man page)
   expect_lt(abs(unname(k$stats[3]) - (-1.1560)), 0.02)
   expect_false(isTRUE(all.equal(unname(k$stats[3]), -1.1560, tolerance = 1e-4)))
+})
+
+test_that("xtkao, convention = 'kao': all five statistics rebuilt by hand (Kao 1999, eqs. 4, 7-12, Remarks 6 and 8)", {
+  d <- sim_panel(k = 1, TT = 20, seed = 11)
+  m <- 2L
+  k <- xtkao(d, y ~ x1, index = c("id", "t"), lags = 1, kernel_lags = m)
+  expect_identical(k$convention, "kao")
+  N <- 6; T0 <- 20
+  ## eq. 4 on all T0 periods
+  dm <- function(v) v - ave(v, d$id)
+  e <- dm(d$y) - dm(d$x1) * sum(dm(d$x1) * dm(d$y)) / sum(dm(d$x1)^2)
+  E <- split(e, d$id)
+  ## eqs. 7-8, s_e^2 = RSS / (N (T0 - 1))
+  el <- unlist(lapply(E, function(z) z[-T0])); et <- unlist(lapply(E, function(z) z[-1]))
+  rho <- sum(el * et) / sum(el^2)
+  t_rho <- (rho - 1) * sqrt(sum(el^2)) / sqrt(sum((et - rho * el)^2) / (N * (T0 - 1)))
+  ## eq. 9, one common lag, s_v^2 = RSS / (N (T0 - 1))
+  ys <- c(); Xs <- NULL
+  for (i in seq_len(N)) { z <- E[[i]]; dz <- diff(z); idx <- 3:T0
+    Xs <- rbind(Xs, cbind(z[idx - 1], dz[idx - 2])); ys <- c(ys, z[idx]) }
+  fit <- lm.fit(Xs, ys)
+  t_adf <- (fit$coefficients[1] - 1) / sqrt(sum(fit$residuals^2) / (N * (T0 - 1)) * solve(crossprod(Xs))[1, 1])
+  ## eqs. 10-12 on first differences, not demeaned, Bartlett weights 1 - j/(m+1)
+  S <- matrix(0, 2, 2); O <- matrix(0, 2, 2)
+  for (i in seq_len(N)) { W <- cbind(diff(d$y[d$id == i]), diff(d$x1[d$id == i])); n <- nrow(W)
+    Si <- crossprod(W) / n; Oi <- Si
+    for (j in seq_len(m)) { G <- crossprod(W[(j + 1):n, ], W[1:(n - j), ]) / n; Oi <- Oi + (1 - j / (m + 1)) * (G + t(G)) }
+    S <- S + Si / N; O <- O + Oi / N }
+  s2 <- S[1, 1] - S[1, 2]^2 / S[2, 2]; o2 <- O[1, 1] - O[1, 2]^2 / O[2, 2]
+  den <- sqrt(o2 / (2 * s2) + 3 * s2 / (10 * o2)); add <- sqrt(6 * N * s2) / (2 * sqrt(o2))
+  hand <- c((sqrt(N) * T0 * (rho - 1) + 3 * sqrt(N) * s2 / o2) / sqrt(3 + 36 * s2^2 / (5 * o2^2)),
+            (t_rho + add) / den, (unname(t_adf) + add) / den,
+            (sqrt(N) * T0 * (rho - 1) + 3 * sqrt(N)) / sqrt(51 / 5),
+            sqrt(5 / 4) * t_rho + sqrt(15 * N / 8))
+  expect_equal(unname(k$stats), hand, tolerance = 1e-10)
+  expect_equal(k$T, T0 - 1); expect_equal(k$T0, T0)
+  expect_output(print(k), "Convention: kao")
+})
+
+test_that("xtkao: the two conventions differ and 'stata' keeps the earlier computation", {
+  d <- sim_panel(k = 2, TT = 18, seed = 3)
+  a <- xtkao(d, y ~ x1 + x2, index = c("id", "t"), kernel_lags = 1)
+  b <- xtkao(d, y ~ x1 + x2, index = c("id", "t"), kernel_lags = 1, convention = "stata")
+  expect_false(isTRUE(all.equal(a$stats, b$stats)))
+  expect_equal(b$T, 16); expect_equal(a$T, 17)
+  expect_error(xtkao(d, y ~ x1, index = c("id", "t"), convention = "gauss"))
+})
+
+test_that("xtkao and xtpedroni refuse duplicated periods, gaps and infeasible settings with clear messages", {
+  d <- sim_panel(k = 1, TT = 20, seed = 21)
+  dd <- d; dd$t[2] <- 1
+  expect_error(xtkao(dd, y ~ x1, index = c("id", "t")), "duplicated")
+  expect_error(xtpedroni(dd, y ~ x1, index = c("id", "t")), "duplicated")
+  dg <- d; dg$t <- dg$t + ifelse(dg$t > 10, 5, 0)
+  expect_error(xtkao(dg, y ~ x1, index = c("id", "t")), "equally spaced")
+  expect_error(xtpedroni(dg, y ~ x1, index = c("id", "t")), "equally spaced")
+  expect_error(xtkao(d, y ~ x1, index = c("id", "t"), kernel_lags = 25), "kernel_lags = 25")
+  expect_error(xtkao(d, y ~ x1, index = c("id", "t"), kernel_lags = -1), "non-negative integer")
+  expect_error(xtpedroni(d, y ~ x1, index = c("id", "t"), kernel_lags = 1.5), "non-negative integer")
+  expect_error(xtkao(d, y ~ x1, index = c("id", "t"), lags = 0), "positive integer")
+  expect_error(xtkao(d, y ~ x1, index = c("id", "t"), lags = 17), "use fewer lags")
+  expect_error(xtpedroni(d, y ~ x1, index = c("id", "t"), lags = 16), "use fewer lags")
+  dc <- d; dc$x2 <- 2 * dc$x1
+  expect_error(xtkao(dc, y ~ x1 + x2, index = c("id", "t")), "collinear")
+  expect_error(xtpedroni(dc, y ~ x1 + x2, index = c("id", "t")), "collinear")
+  dk <- d; dk$x3 <- dk$id
+  expect_error(xtkao(dk, y ~ x1 + x3, index = c("id", "t")), "x3")
+  dz <- d; dz$y <- 5
+  expect_error(xtkao(dz, y ~ x1, index = c("id", "t")), "no variation")
+  expect_error(xtpedroni(dz, y ~ x1, index = c("id", "t")), "constant")
+  d4 <- d[d$t <= 4, ]
+  expect_error(suppressWarnings(xtkao(d4, y ~ x1, index = c("id", "t"), convention = "stata")), "fits exactly")
+})
+
+test_that("invariance: scale, panel constants, row and panel order, time labels", {
+  d <- sim_panel(k = 2, TT = 24, seed = 31)
+  f_k <- function(D) xtkao(D, y ~ x1 + x2, index = c("id", "t"), lags = 2, kernel_lags = 3)$stats
+  f_p <- function(D) xtpedroni(D, y ~ x1 + x2, index = c("id", "t"), lags = 2, kernel_lags = 3)$stats
+  for (f in list(f_k, f_p)) {
+    b <- f(d)
+    D <- d; D$y <- 7.3 * D$y; D$x1 <- -0.01 * D$x1; expect_equal(f(D), b, tolerance = 1e-10)
+    D <- d; D$y <- D$y + 100 * D$id; D$x2 <- D$x2 - 40 * D$id; expect_equal(f(D), b, tolerance = 1e-10)
+    expect_equal(f(d[rev(seq_len(nrow(d))), ]), b, tolerance = 1e-12)
+    D <- d; D$id <- c(70, 3, 55, 12, 1, 99)[D$id]; D$t <- D$t + 1999; expect_equal(f(D), b, tolerance = 1e-10)
+  }
+  ## the "stata" convention is not invariant to panel constants (AR(1) steps without constant)
+  s0 <- xtkao(d, y ~ x1 + x2, index = c("id", "t"), kernel_lags = 3, convention = "stata")$stats
+  D <- d; D$y <- D$y + 100 * D$id
+  s1 <- xtkao(D, y ~ x1 + x2, index = c("id", "t"), kernel_lags = 3, convention = "stata")$stats
+  expect_false(isTRUE(all.equal(s0, s1)))
 })

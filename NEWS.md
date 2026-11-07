@@ -1,3 +1,20 @@
+# paneltests 1.0.9
+
+## Breaking changes
+
+* `xtkao()`: argument `convention`, `"kao"` (default) or `"stata"`. With `"kao"` the fixed-effects regression uses all `T0` periods; the long-run covariance matrices are built from the first differences of the response and the regressors, not demeaned (Kao 1999, eqs. 10-12); the residual variances of the DF and ADF regressions are divided by `N (T0 - 1)`; and the modified DF statistics use `sqrt(N) T0 (rho - 1)`. `convention = "stata"` is the computation of 1.0.8.
+* `xtkao()`, `xtpedroni()`: stop with an error naming the panel or the setting when a (panel, time) pair is duplicated; when a numeric or `Date` time index is not equally spaced within a panel; when the response has no variation within panels (`xtkao()`) or is constant in a panel (`xtpedroni()`); when a regressor is constant within panels or collinear with the others after removing the fixed effects (`xtkao()`) or with the deterministic terms of a panel (`xtpedroni()`); when `kernel_lags` is not a non-negative integer smaller than the number of differenced observations per panel; when `lags` is not a positive integer or leaves no more observations than coefficients in the ADF regression; and when an ADF regression has zero residual variance. Up to 1.0.8 duplicated and unequally spaced periods were treated as consecutive, `kernel_lags` above the panel length and collinear regressors stopped with internal errors, negative `kernel_lags` was treated as 0, and an exact ADF fit returned an infinite statistic with p-value 0 (`xtpedroni()`) or a statistic of order 1e14 (`xtkao()`, `convention = "stata"`).
+* `xtkao()`: the returned `T` is the number of periods of the DF regression (`T0 - 1` with `"kao"`, `T0 - 2` with `"stata"`); the returned list includes `T0` and `convention`. The print method shows both period counts and the convention.
+
+## Other changes
+
+* `xtkao()` man page: the two conventions are described; the agreement with Stata `xtcointtest kao` is stated for `convention = "stata"`.
+* `xtkao()`, `xtpedroni()` man pages: the input checks are listed; the `xtkao()` page states that the statistics of `convention = "stata"` change when a panel-specific constant is added to a variable.
+* Tests: the five Kao statistics with `convention = "kao"` rebuilt by hand; the earlier hand rebuild and the Stata agreement test use `convention = "stata"`; the input checks; invariance of both functions to rescaling, panel-specific constants, row and panel order and time labels.
+* `inst/validation/kao_table4.R` and `inst/validation/kao_tables_5_6.R`: simulations of the design of Kao (1999, section 5.2) compared with Kao (1999, Tables 4, 5 and 6). `inst/validation/ledger_xtkao.md` updated.
+* `xtkao()` man page: simulated rejection rates under the null for N = 6, T0 = 17 with one and four regressors.
+* `inst/CITATION` version updated to 1.0.9.
+
 # paneltests 1.0.8
 
 ## Breaking changes

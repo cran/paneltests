@@ -120,6 +120,15 @@ of this function (or an integer \code{kernel_lags}) will in general differ
 from a Stata run with \code{kernel(bartlett nwest)} unless all panels
 received the same bandwidth (as when the reported average is an integer
 such as 0.00).
+
+\strong{Input checks.} The function stops when a (panel, time) pair is
+duplicated, when a numeric or \code{Date} time index is not equally
+spaced within a panel, when the response is constant in a panel, when a
+regressor is constant or collinear with the others and the deterministic
+terms in a panel, when \code{kernel_lags} is not a non-negative integer
+smaller than the number of differenced observations per panel, and when
+\code{lags} leaves no more observations than coefficients in the
+panel-specific ADF regressions or makes one of them fit exactly.
 }
 \examples{
 set.seed(1)

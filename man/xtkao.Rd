@@ -10,7 +10,8 @@ xtkao(
   index,
   lags = 1L,
   lag_select = c("none", "aic", "bic"),
-  kernel_lags = NULL
+  kernel_lags = NULL,
+  convention = c("kao", "stata")
 )
 }
 \arguments{
@@ -31,77 +32,106 @@ sample of the largest regression.}
 
 \item{kernel_lags}{Integer bandwidth of the Bartlett kernel for the
 long-run covariance matrices, applied to every panel, or \code{NULL}
-(default) for \code{floor(4 (T/100)^(2/9))}. Stata selects a bandwidth
-per panel with the Newey-West automatic rule and reports the average;
-that rule is not reproduced here.}
+(default) for \code{floor(4 (T/100)^(2/9))} with \eqn{T = T_0 - 1}.
+Stata selects a bandwidth per panel with the Newey-West automatic rule
+and reports the average; that rule is not reproduced here.}
+
+\item{convention}{\code{"kao"} (default) or \code{"stata"}: the sample
+and innovation conventions described in Details.}
 }
 \value{
 An object of class \code{"xtkao"}: a list with \code{stats},
   \code{p} (one-sided left-tail p-values \code{pnorm(stat)}), \code{rho},
   \code{t_rho}, \code{t_adf}, \code{adf_lags}, \code{kernel_lags},
-  \code{sigma2_nu}, \code{omega2_nu}, \code{N}, \code{T} and \code{call}.
+  \code{sigma2_nu}, \code{omega2_nu}, \code{N}, \code{T} (periods of
+  the DF regression), \code{T0} (periods per panel in the data),
+  \code{convention} and \code{call}.
 }
 \description{
 Residual-based panel cointegration tests of Kao (1999) with a common
 cointegrating vector and panel fixed effects: the modified DF t, DF t and
 ADF t (which allow endogenous regressors through the long-run variance
 adjustment) and the unadjusted modified DF t and DF t (strict exogeneity,
-no serial correlation). The statistics are those of Kao (1999); the sample
-conventions are those of the Stata command \code{xtcointtest kao}, which
-four of the five statistics reproduce numerically (see Details). The
-p-values are left-tail normal probabilities, the direction of rejection
-stated by Kao (1999).
+no serial correlation). The default \code{convention = "kao"} follows
+Kao (1999) and reproduces the finite-sample sizes of Kao (1999, Table 4);
+\code{convention = "stata"} follows the Stata command
+\code{xtcointtest kao} (see Details). The p-values are left-tail normal
+probabilities, the direction of rejection stated by Kao (1999).
 }
 \details{
-Following Stata, the sample first loses one period to the AR(1)
-regressions of each variable on its own lag (pooled, without constant)
-whose residuals \eqn{w_{it} = (u_{it}, \epsilon_{it}')'} enter the
-long-run covariance matrices. The matrices are computed per panel on the
-within-panel demeaned residuals with a Bartlett kernel, averaged over
-panels, and the conditional variances
+With \eqn{T_0} periods per panel, the two conventions are:
+
+\strong{\code{convention = "kao"}.} The fixed-effects regression of
+\eqn{y} on \eqn{x} (Kao 1999, eq. 4) uses all \eqn{T_0} periods. The
+innovations entering the long-run covariance matrices are the first
+differences \eqn{\hat w_{it} = (\Delta y_{it}, \Delta x_{it}')'}, not
+demeaned (Kao 1999, eqs. 10-12). The pooled DF regression
+\eqn{\hat e_{it} = \rho \hat e_{i,t-1} + \nu_{it}} (eqs. 7-8) and the
+pooled ADF regression with \eqn{p} common lagged differences (eq. 9) use
+the residual variances \eqn{s_e^2} and \eqn{s_\nu^2} computed as the
+residual sum of squares divided by \eqn{N (T_0 - 1)}, the number of
+observations of the DF regression, and the modified DF statistics use
+\eqn{\sqrt{N} T_0 (\hat\rho - 1)}. With these choices the five
+statistics reproduce the sizes of Kao (1999, Table 4) in a replication of
+its design (two ADF lags, Bartlett window 5, \eqn{T = 10, 25, 50},
+\eqn{N = 2} to 50, 5000 replications per cell): mean absolute
+differences of 0.002 to 0.009 across the five columns
+(\code{inst/validation/kao_table4.R}).
+
+\strong{Size in short panels.} Both conventions use the asymptotic
+N(0, 1) critical values and over-reject in short panels, as Kao (1999,
+Table 4) reports. In a simulation with \eqn{N = 6}, \eqn{T_0 = 17}, one
+regressor, no cointegration, lags chosen by AIC up to 2 and the default
+bandwidth (1000 replications), the rejection rates at the nominal 5
+percent level were 0.13 to 0.19 with \code{"kao"} and 0.05 to 0.17 with
+\code{"stata"} across the five statistics, and 0.35 to 0.50 and 0.21 to
+0.43 with four regressors. Rejections in such samples are weak evidence
+of cointegration.
+
+\strong{\code{convention = "stata"}.} As in \code{xtcointtest kao}, the
+sample first loses one period to the pooled AR(1) regressions (without
+constant) of each variable on its own lag; their residuals, demeaned
+within panel, are the innovations. The fixed-effects regression uses the
+remaining \eqn{T_0 - 1} periods, the DF regression \eqn{T_0 - 2}, and
+the residual variances and the modified DF statistics use
+\eqn{T = T_0 - 2}. This is the computation of versions 1.0.8 and earlier.
+The unadjusted statistics reproduce \code{xtcointtest kao} to at least
+1e-6; the modified DF t and DF t do so when the same kernel bandwidth is
+used for all panels (verified on a six-country panel, four
+specifications, bandwidths 0, 1 and 2). Stata's ADF t differs by up to
+0.19 (standardized units) on the reference data; its internal convention
+could not be identified from the documentation. The AR(1) regressions of
+this convention have no constant, so its statistics change when a
+panel-specific constant is added to a variable; the statistics of
+\code{convention = "kao"} do not.
+
+\strong{Input checks.} The function stops when a (panel, time) pair is
+duplicated, when a numeric or \code{Date} time index is not equally
+spaced within a panel, when the response has no within-panel variation,
+when a regressor is constant within panels or collinear with the others
+after removing the fixed effects, when \code{kernel_lags} is not a
+non-negative integer smaller than the number of innovations per panel,
+and when \code{lags} leaves too few observations for the pooled ADF
+regression or makes it fit exactly.
+
+In both conventions the long-run covariance matrices are computed per
+panel with a Bartlett kernel and averaged over panels, and the
+conditional variances
 \eqn{\hat\sigma_\nu^2 = \hat\sigma_u^2 - \hat\Sigma_{u\epsilon}
 \hat\Sigma_{\epsilon\epsilon}^{-1} \hat\Sigma_{\epsilon u}} and
-\eqn{\hat\omega_\nu^2} (same with the long-run matrix) are taken from the
-averaged matrices. The fixed-effects regression of \eqn{y} on \eqn{x} is
-estimated on the remaining \eqn{T_0 - 1} periods, and the pooled DF
-regression \eqn{\hat e_{it} = \rho \hat e_{i,t-1} + \nu_{it}} (no
-constant) on \eqn{T = T_0 - 2} periods per panel gives \eqn{\hat\rho} and
-\eqn{t_\rho = (\hat\rho - 1)/se}, with the residual variance
-\eqn{s_e^2 = (NT)^{-1}\sum\sum \hat\nu_{it}^2} (Kao 1999, p. 7). The
-ADF regression (Kao 1999, eq. 9) adds \eqn{p} lagged differences and is
-estimated on the \eqn{T - p} periods per panel for which the lags exist;
-its t statistic is \eqn{t_{ADF} = (\hat\rho - 1)[\sum_i \hat e_i' Q_i
-\hat e_i]^{1/2} / s_\nu} with \eqn{s_\nu^2 = (NT)^{-1}\sum_i\sum_t
-\hat\nu_{itp}^2} (Kao 1999, p. 9-10), where \eqn{T} is the number of
-periods of the DF step reported as \code{T} (not the number of ADF
-observations \eqn{N(T - p)}). Versions up to 1.0.7 divided by the
-number of ADF observations.
+\eqn{\hat\omega_\nu^2} (same with the long-run matrix) are taken from
+the averaged matrices. The ADF t statistic is
+\eqn{t_{ADF} = (\hat\rho - 1)[\sum_i \hat e_i' Q_i \hat e_i]^{1/2} /
+s_\nu} (Kao 1999, p. 9).
 
 All five statistics are standard normal under the null and diverge to
 minus infinity under the alternative (Kao 1999, Theorem 2, Corollary 2
-and Remarks 6 and 8), so the p-values are \eqn{\Phi(z)}, \eqn{z} being the standardized statistic.
-Versions up to 1.0.7 returned \eqn{1 - \Phi(|z|)}, which
-rejects a true null at twice the nominal rate.
-
-Kao (1999) tabulates finite-sample sizes for one regressor only (Table
-4); the function warns when there are more than seven regressors (no
-finite-sample evidence at all), when \eqn{N < 2} (the standardization is
-asymptotic in \eqn{N}) or when the panel has fewer than 10 periods.
-
-\strong{Agreement with Stata.} The unadjusted statistics reproduce
-\code{xtcointtest kao} to at least 1e-6; the modified DF t and DF t do
-so when the same kernel bandwidth is used for all panels (verified on a
-six-country panel, four specifications, bandwidths 0, 1 and 2). Two
-conventions of that command are kept for this agreement and are the
-package's choice: the innovations entering the long-run covariance
-matrices are the residuals of pooled AR(1) regressions, demeaned within
-panel, rather than the first differences of Kao's eqs. (10)-(12), and
-the fixed-effects regression uses the \eqn{T_0 - 1} periods after that
-step. The ADF t follows the paper's \eqn{s_\nu^2 = RSS/(NT)}; Stata's
-ADF t differs from it by up to 0.19 (standardized units) on the
-reference data, and its internal convention could not be identified from
-the documentation (known gap). Stata's default bandwidth is chosen per
-panel by the Newey and West (1994) algorithm; it is not reproduced here.
+and Remarks 6 and 8), so the p-values are \eqn{\Phi(z)}, \eqn{z} being
+the standardized statistic. Kao (1999) tabulates finite-sample sizes for
+one regressor only (Table 4); the function warns when there are more than
+seven regressors (no finite-sample evidence at all), when \eqn{N < 2}
+(the standardization is asymptotic in \eqn{N}) or when the panel has
+fewer than 10 periods.
 }
 \examples{
 set.seed(2)
